@@ -1,0 +1,40 @@
+name: Deploy Publisher
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/521478932262/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'github-actions-sa@project-30a4caa9-f885-4066-a8c.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push publisher image
+        run: |
+          gcloud auth configure-docker europe-southwest1-docker.pkg.dev --quiet
+          docker build -t europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} .
+          docker push europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }}
+          docker tag europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:latest
+          docker push europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:latest
+
+      - name: Update Cloud Run publisher job
+        run: |
+          gcloud run jobs update swalla-publisher \
+            --image=europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} \
+            --region=europe-southwest1 \
+            --project=project-30a4caa9-f885-4066-a8c
