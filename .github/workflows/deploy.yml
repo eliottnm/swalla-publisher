@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
 
+env:
+  GCP_PROJECT: project-30a4caa9-f885-4066-a8c
+  GCP_REGION: europe-southwest1
+  REGISTRY: europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -35,14 +40,14 @@ jobs:
 
       - name: Build and push publisher image
         run: |
-          docker build -t europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} .
-          docker push europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }}
-          docker tag europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:latest
-          docker push europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:latest
+          docker build -t ${{ env.REGISTRY }}/publisher:${{ github.sha }} .
+          docker push ${{ env.REGISTRY }}/publisher:${{ github.sha }}
+          docker tag ${{ env.REGISTRY }}/publisher:${{ github.sha }} ${{ env.REGISTRY }}/publisher:latest
+          docker push ${{ env.REGISTRY }}/publisher:latest
 
       - name: Update Cloud Run publisher job
         run: |
           gcloud run jobs update swalla-publisher \
-            --image=europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} \
-            --region=europe-southwest1 \
-            --project=project-30a4caa9-f885-4066-a8c
+            --image=${{ env.REGISTRY }}/publisher:${{ github.sha }} \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT }}
