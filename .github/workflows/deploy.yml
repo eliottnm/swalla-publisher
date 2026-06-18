@@ -16,17 +16,25 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
+        id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: 'projects/521478932262/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
           service_account: 'github-actions-sa@project-30a4caa9-f885-4066-a8c.iam.gserviceaccount.com'
+          token_format: access_token
+
+      - name: Login to Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: europe-southwest1-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Build and push publisher image
         run: |
-          gcloud auth configure-docker europe-southwest1-docker.pkg.dev --quiet
           docker build -t europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} .
           docker push europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }}
           docker tag europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:${{ github.sha }} europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:latest
