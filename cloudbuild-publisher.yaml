@@ -1,0 +1,12 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud auth configure-docker europe-southwest1-docker.pkg.dev --quiet
+        docker build -t europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:latest .
+        docker push europe-southwest1-docker.pkg.dev/project-30a4caa9-f885-4066-a8c/fynder/publisher:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,15 @@
+{
+  "name": "swalla-publisher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "once": "node src/index.js --once",
+    "check": "node --check src/index.js"
+  },
+  "dependencies": {
+    "@google-cloud/pubsub": "^4.11.0",
+    "mongodb": "^6.21.0"
+  }
+}
