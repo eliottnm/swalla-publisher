@@ -11,5 +11,8 @@
   "dependencies": {
     "@google-cloud/pubsub": "^4.11.0",
     "mongodb": "^6.21.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^11.2.0"
   }
 }

@@ -22,6 +22,7 @@ const config = {
 if (!config.mongoUri) throw new Error('MONGODB_URI is required');
 if (!config.projectId) throw new Error('GOOGLE_CLOUD_PROJECT is required');
 
+const { ObjectId } = await import('mongodb');
 const mongo = new MongoClient(config.mongoUri, {
   serverSelectionTimeoutMS: 30_000,
   connectTimeoutMS: 10_000,
@@ -32,10 +33,26 @@ const mongo = new MongoClient(config.mongoUri, {
   w: 'majority',
 });
 const db = mongo.db(config.mongoDb);
-const pubsub = new PubSub({ projectId: config.projectId });
-const topic = pubsub.topic(config.topicName);
 
-const lastRunByUser = new Map();
+// Mock Pub/Sub for local testing without GCP credentials
+let topic;
+if (process.env.PUBLISHER_MOCK_PUBSUB === 'true') {
+  const publishedBatches = [];
+  topic = {
+    publishMessage: async (msg) => {
+      const batch = JSON.parse(msg.data.toString());
+      publishedBatches.push(batch);
+      const id = `mock-${Date.now()}-${publishedBatches.length}`;
+      console.log(`[${timestamp()}] MOCK publicado lote con ${batch.length} tareas - ${id}`);
+      return id;
+    },
+    getPublishedBatches: () => publishedBatches,
+  };
+} else {
+  const { PubSub } = await import('@google-cloud/pubsub');
+  const pubsub = new PubSub({ projectId: config.projectId });
+  topic = pubsub.topic(config.topicName);
+}
 
 try {
   await mongo.connect();
@@ -89,7 +106,38 @@ async function publishPendingTasks() {
     })
   );
 
+  // Persist lastRunAt for filters whose tasks were actually published
+  if (published > 0) {
+    await markFiltersAsRun(filters.map((f) => f._id.toString()));
+  }
+
   console.log(`[${timestamp()}] Publicación terminada. ${published} lotes publicados, ${failed} fallidos.`);
+}
+
+async function markFiltersAsRun(filterIds) {
+  if (!filterIds || filterIds.length === 0) return;
+  const now = new Date();
+  try {
+    const objectIds = filterIds
+      .map((id) => {
+        try {
+          return new ObjectId(id);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    if (objectIds.length === 0) return;
+
+    const result = await db.collection('searchFilters').updateMany(
+      { _id: { $in: objectIds } },
+      { $set: { lastRunAt: now } }
+    );
+    console.log(`[${timestamp()}] Actualizado lastRunAt para ${result.modifiedCount} filtros.`);
+  } catch (error) {
+    console.error(`[${timestamp()}] Error actualizando lastRunAt: ${error.message}`);
+  }
 }
 
 function chunk(items, size) {
@@ -140,7 +188,12 @@ async function getActiveFilters(limit) {
           ],
         },
       },
-      { $sort: { updatedAt: -1 } },
+      {
+        $addFields: {
+          lastRunMs: { $ifNull: ['$lastRunAt', { $dateFromString: { dateString: '1970-01-01T00:00:00Z' } }] },
+        },
+      },
+      { $sort: { lastRunMs: 1, updatedAt: -1 } },
       { $limit: limit },
       {
         $addFields: {
@@ -151,6 +204,7 @@ async function getActiveFilters(limit) {
         $project: {
           user: 0,
           userObjectId: 0,
+          lastRunMs: 0,
         },
       },
     ])
@@ -160,20 +214,19 @@ async function getActiveFilters(limit) {
   for (const filter of filters) {
     const userId = filter.userId;
     const delayMinutes = filter.delayMinutes ?? 1;
-    const lastRun = lastRunByUser.get(userId);
+    const lastRunAt = filter.lastRunAt;
 
-    if (lastRun) {
-      const msSinceLastRun = now.getTime() - lastRun.getTime();
+    if (lastRunAt) {
+      const msSinceLastRun = now.getTime() - new Date(lastRunAt).getTime();
       const requiredDelayMs = delayMinutes * 60 * 1000;
 
       if (msSinceLastRun < requiredDelayMs) {
-        console.log(`[${timestamp()}] Skipping user ${userId}: delay not met (${Math.round(msSinceLastRun / 1000)}s < ${delayMinutes}min)`);
+        console.log(`[${timestamp()}] Skipping filter ${filter._id}: delay not met (${Math.round(msSinceLastRun / 1000)}s < ${delayMinutes}min)`);
         continue;
       }
     }
 
     eligibleFilters.push(filter);
-    lastRunByUser.set(userId, now);
   }
 
   return eligibleFilters;
